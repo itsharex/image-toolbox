@@ -1,0 +1,182 @@
+name: Release
+
+# 仅手动触发，且必须填写 tag
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (eg. v1.2.3)'
+        required: true
+        default: ''
+
+permissions:
+  contents: write   # 需要写权限以便创建 tag & release & push
+
+jobs:
+  build-and-release-windows:
+    runs-on: windows-latest
+    name: Build Windows (x64) and Create Release
+    env:
+      CARGO_HOME: ${{ runner.temp }}\.cargo
+      RUSTUP_HOME: ${{ runner.temp }}\.rustup
+
+    steps:
+      - name: Checkout repository (full history & tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend (vite)
+        run: npm run build
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Install WiX Toolset (needed for MSI bundling)
+        run: |
+          choco install wixtoolset --yes
+          refreshenv || true
+
+      - name: Build Tauri (bundle for Windows x64)
+        # tauri build on Windows will produce installer(s) (MSI/NSIS) and also portable exe/zip in bundle folder.
+        run: |
+          echo "Running tauri build..."
+          npm run tauri build
+        env:
+          CI: true
+
+      - name: Show bundle output (debug)
+        shell: pwsh
+        run: |
+          Write-Host "Looking for bundles in src-tauri/target/release/bundle and other common locations..."
+          if (Test-Path "src-tauri/target/release/bundle") {
+            Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -File | Select-Object FullName,Length
+          } else {
+            Write-Host "No bundle directory found at src-tauri/target/release/bundle"
+          }
+          Get-ChildItem -Path src-tauri/target/release -Filter *.exe -File -ErrorAction SilentlyContinue | Select-Object FullName,Length
+
+      - name: Ensure tag exists (create & push if missing)
+        id: ensure_tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) {
+            Write-Error "Tag input is required (workflow_dispatch.input.tag)"
+            exit 1
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch --tags origin
+          $exists = git tag --list $tag
+          if (-not $exists) {
+            Write-Host "Tag $tag not found locally/remote. Creating annotated tag and pushing..."
+            git tag -a $tag -m "Release $tag"
+            git push origin "refs/tags/$tag"
+            Write-Host "Created and pushed tag $tag"
+            echo "::set-output name=created::true"
+          } else {
+            Write-Host "Tag $tag already exists."
+            echo "::set-output name=created::false"
+          }
+
+      - name: Read release message from .github/release-message.md
+        id: read_release_message
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".github/release-message.md")) {
+            Write-Host ".github/release-message.md not found; using default message."
+            $body = "Release $env:TAG"
+          } else {
+            $body = Get-Content -Raw .github/release-message.md
+          }
+          # export via GITHUB_OUTPUT
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "body<<EOF"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $body
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "EOF"
+
+      - name: Create or update GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          release_name: ${{ github.event.inputs.tag }}
+          body: ${{ steps.read_release_message.outputs.body }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload bundle files to Release (msi / exe / zip)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $upload_url_template = '${{ steps.create_release.outputs.upload_url }}'
+          if (-not $upload_url_template) {
+            Write-Error "No upload_url from create-release step."
+            exit 1
+          }
+          # remove template suffix "{?name,label}" if present
+          $upload_url = $upload_url_template -replace '\{\?name,label\}$',''
+
+          $candidates = @()
+          if (Test-Path "src-tauri/target/release/bundle") {
+            $candidates += Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -File -Include *.msi,*.exe,*.zip,*.nsis
+          }
+          $candidates += Get-ChildItem -Path src-tauri/target/release -File -Filter *.exe -ErrorAction SilentlyContinue
+          if (Test-Path "dist") {
+            $candidates += Get-ChildItem -Path dist -Recurse -File -Include *.zip,*.exe -ErrorAction SilentlyContinue
+          }
+
+          if (-not $candidates -or $candidates.Count -eq 0) {
+            Write-Error "No release artifacts found to upload."
+            exit 1
+          }
+
+          foreach ($f in $candidates) {
+            $name = $f.Name
+            $url = "$upload_url?name=$name"
+            Write-Host "Uploading $name -> $url"
+            $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+            $headers = @{
+              Authorization = "token $env:GITHUB_TOKEN"
+              "Content-Type" = "application/octet-stream"
+              Accept = "application/vnd.github+json"
+            }
+            try {
+              Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $bytes
+              Write-Host "Uploaded $name"
+            } catch {
+              Write-Warning "Failed to upload $name: $_"
+            }
+          }
+
+      - name: Done
+        run: echo "Build & release steps finished. Check the Release page for uploaded assets."
