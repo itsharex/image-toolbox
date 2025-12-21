@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node.js (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 'lts/*'
           cache: 'npm'
 
       # ✅ 优化 1: 使用官方推荐的 Rust 工具链
@@ -36,21 +36,14 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      # ✅ 优化 2: 使用智能缓存（替代手动 cache 步骤）
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-
-      - name: Clean Cargo cache
-        run: cargo clean
-        working-directory: ./src-tauri
+      # 🔴 暂时禁用 Rust 缓存以进行问题排查
+      # - name: Rust Cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     workspaces: './src-tauri -> target'
 
       - name: Install npm dependencies
         run: npm ci
-
-      - name: Check Tauri CLI version
-        run: npx tauri --version
 
       - name: Build frontend
         run: npm run build
