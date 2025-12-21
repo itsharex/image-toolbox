@@ -96,3 +96,6 @@ npm run tauri build
   }
 }
 ```
+## 版权声明
+© 2025 Endfield Industry Human Resource Team, Some Rights Reserved. <br>
+Licensed under the GNU General Public License v3.0 license.
