@@ -33,7 +33,7 @@
     ],
     "windows": {
       "nsis": {
-        "license": "../LICENSE"
+        "license": "LICENSE.txt" 
       }
     }
   }

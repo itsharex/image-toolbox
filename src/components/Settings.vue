@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { Command, open as openUrl } from '@tauri-apps/plugin-shell';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { tempDir, localDataDir } from '@tauri-apps/api/path';
@@ -9,11 +9,23 @@ import {
   Cpu, Monitor, ShieldCheck,
   RefreshCw, FileCode, X, Folder
 } from 'lucide-vue-next';
+import { getVersion } from '@tauri-apps/api/app';
 
 // --- State ---
 const ffmpegStatus = ref<'unknown' | 'installed' | 'missing'>('unknown');
 const ffmpegVersion = ref('');
-const appVersion = '0.1.0';
+const appVersion = ref('0.1.0');
+
+onMounted(async () => {
+  try {
+    const version = await getVersion();
+    appVersion.value = version;
+  } catch (error) {
+    console.error("Failed to get app version:", error);
+    addLog("无法获取应用版本。");
+  }
+});
+
 const isChecking = ref(false);
 const logs = ref<string[]>([]);
 

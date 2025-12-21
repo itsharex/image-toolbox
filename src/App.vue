@@ -31,7 +31,7 @@ const navItems = [
           <div class="relative group">
             <div class="absolute inset-0 bg-primary/40 blur-md rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             <div class="w-9 h-9 relative rounded-xl bg-zinc-900/50 border border-white/10 flex items-center justify-center shadow-inner overflow-hidden">
-               <img :src="logoUrl" class="w-full h-full object-cover" alt="Logo" />
+               <Image class="w-5 h-5 text-primary" />
             </div>
           </div>
           <div class="flex flex-col">
