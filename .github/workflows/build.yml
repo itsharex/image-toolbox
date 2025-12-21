@@ -8,9 +8,10 @@ jobs:
     name: Build Windows x64 (exe/msi + portable)
     runs-on: windows-latest
 
+    # ✅ 修正点：不要使用 runner.temp
     env:
-      CARGO_HOME: ${{ runner.temp }}\.cargo
-      RUSTUP_HOME: ${{ runner.temp }}\.rustup
+      CARGO_HOME: ${{ github.workspace }}\.cargo
+      RUSTUP_HOME: ${{ github.workspace }}\.rustup
 
     steps:
       - name: Checkout repository
