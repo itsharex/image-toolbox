@@ -1,8 +1,13 @@
 # Image Toolbox (图片工具箱)
-
+[![Release](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml)
+[![Build](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue) ![Tauri](https://img.shields.io/badge/Tauri-v2-orange) ![Vue](https://img.shields.io/badge/Vue-3-green)
 
 一个基于 **Tauri v2** + **Vue 3** 构建的现代化、高性能桌面端图片处理工具。专为批量处理任务设计，支持 Git 自动化工作流。
+
+## 下载
+1. **前往 [Release](https://github.com/EIHRTeam/image-toolbox/releases/latest)**
+2. **从 [Action](https://github.com/EIHRTeam/image-toolbox/actions?query=is%3Asuccess) 下载**
 
 ## ✨ 核心功能
 
