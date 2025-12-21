@@ -87,6 +87,7 @@ jobs:
           prerelease: false
           fail_on_unmatched_files: false # 避免找不到文件时报错
           files: |
+            LICENSE
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/*.exe
