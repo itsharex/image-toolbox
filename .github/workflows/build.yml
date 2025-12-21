@@ -1,0 +1,84 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x64:
+    name: Build Windows x64 (exe/msi + portable)
+    runs-on: windows-latest
+
+    env:
+      CARGO_HOME: ${{ runner.temp }}\.cargo
+      RUSTUP_HOME: ${{ runner.temp }}\.rustup
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Install WiX Toolset (for MSI bundling)
+        run: |
+          choco install wixtoolset --yes
+          refreshenv || true
+
+      - name: Build Tauri bundles (Windows x64)
+        run: |
+          echo "Building Tauri bundles (installer + portable)..."
+          npm run tauri build
+        env:
+          CI: true
+
+      - name: Inspect build outputs
+        shell: pwsh
+        run: |
+          Write-Host "=== src-tauri/target/release/bundle ==="
+          if (Test-Path "src-tauri/target/release/bundle") {
+            Get-ChildItem -Recurse -File src-tauri/target/release/bundle |
+              Select-Object FullName,Length
+          } else {
+            Write-Host "bundle directory not found"
+          }
+
+          Write-Host "=== src-tauri/target/release ==="
+          Get-ChildItem -File src-tauri/target/release -Filter *.exe -ErrorAction SilentlyContinue |
+            Select-Object FullName,Length
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-build
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/release/*.exe
+            dist/**
