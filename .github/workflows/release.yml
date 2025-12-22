@@ -1,7 +1,6 @@
 name: Release
 
 on:
-  # ✅ 仅允许手动触发，且必须输入 Tag
   workflow_dispatch:
     inputs:
       tag:
@@ -9,7 +8,6 @@ on:
         required: true
         default: ''
 
-# 权限配置：允许创建 Release 和 Tag
 permissions:
   contents: write
 
@@ -22,7 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 获取完整历史以进行 Tag 操作
+          fetch-depth: 0
 
       - name: Setup Node.js (LTS)
         uses: actions/setup-node@v4
@@ -30,13 +28,11 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
 
-      # ✅ 优化 1: 使用官方推荐的 Rust 工具链
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
-      # ✅ 优化 2: 使用智能缓存（替代手动 cache 步骤）
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -48,48 +44,74 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      # ✅ 优化 3: 移除了 WiX 安装步骤（windows-latest 镜像已内置，节省时间）
-
       - name: Build Tauri
         run: npm run tauri build
         env:
           CI: true
 
-      # --- MSIX Packaging & Signing Steps Start ---
+      # --- MSIX Packaging & Signing Steps Start (REPAIRED) ---
       - name: Package MSIX
         shell: pwsh
         run: |
-          # 0. Find MakeAppx.exe
+          # ---------------------------------------------------------
+          # 1. 动态查找 MakeAppx.exe (避免路径硬编码错误)
+          # ---------------------------------------------------------
           $kitsRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
-          $sdkVersion = Get-ChildItem -Path $kitsRoot | Where-Object { $_.Name -match "^10\." } | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty Name
-          $makeAppx = "$kitsRoot\$sdkVersion\x64\MakeAppx.exe"
-          Write-Host "Using MakeAppx from: $makeAppx"
+          $latestSdk = Get-ChildItem -Path $kitsRoot | Where-Object { $_.Name -match "^10\." } | Sort-Object Name -Descending | Select-Object -First 1
+          
+          if (-not $latestSdk) { Write-Error "No Windows SDK found"; exit 1 }
+          
+          $makeAppx = "$($latestSdk.FullName)\x64\MakeAppx.exe"
+          Write-Host "Using MakeAppx: $makeAppx"
 
-          if (-not (Test-Path $makeAppx)) {
-            Write-Error "MakeAppx.exe not found at $makeAppx"
-            exit 1
-          }
+          if (-not (Test-Path $makeAppx)) { Write-Error "MakeAppx not found at $makeAppx"; exit 1 }
 
-          # 1. Prepare Directory Structure
+          # ---------------------------------------------------------
+          # 2. 准备目录结构
+          # ---------------------------------------------------------
           $distDir = "msix-dist"
           $iconDir = "$distDir\icons"
+          if (Test-Path $distDir) { Remove-Item $distDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $iconDir
 
-          # 2. Copy Executable & Resources
+          # 拷贝主程序
           Copy-Item "src-tauri/target/release/image-toolbox.exe" -Destination "$distDir\image-toolbox.exe"
-          
-          # Copy all icons
+          # 拷贝图标
           Copy-Item "src-tauri/icons\*" -Destination $iconDir
           
-          # Copy Manifest
-          Copy-Item "src-tauri/AppxManifest.xml" -Destination "$distDir\AppxManifest.xml"
-
-          # 3. Pack MSIX
-          $msixPath = "src-tauri/target/release/bundle/msix/image-toolbox.msix"
-          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix"
+          # ---------------------------------------------------------
+          # 3. 处理 AppxManifest.xml (关键修复：版本号格式)
+          # ---------------------------------------------------------
+          $manifestSrc = "src-tauri/AppxManifest.xml"
+          $manifestDst = "$distDir\AppxManifest.xml"
           
-          # Use Full Path to MakeAppx
+          # 读取 Manifest 内容
+          [xml]$xml = Get-Content $manifestSrc
+          $originalVersion = $xml.Package.Identity.Version
+          
+          # 检查版本号格式，如果只有3段 (x.y.z)，补全为4段 (x.y.z.0)
+          if ($originalVersion -match '^\d+\.\d+\.\d+$') {
+              $newVersion = "$originalVersion.0"
+              Write-Warning "Auto-fixing Manifest Version: $originalVersion -> $newVersion"
+              $xml.Package.Identity.Version = $newVersion
+          } else {
+              Write-Host "Manifest Version is already: $originalVersion"
+          }
+          
+          # 保存修改后的 Manifest 到临时目录
+          $xml.Save($manifestDst)
+
+          # ---------------------------------------------------------
+          # 4. 执行打包
+          # ---------------------------------------------------------
+          $msixDir = "src-tauri/target/release/bundle/msix"
+          $msixPath = "$msixDir\image-toolbox.msix"
+          New-Item -ItemType Directory -Force -Path $msixDir
+          
+          Write-Host "Packing to $msixPath ..."
           & $makeAppx pack /d "$distDir" /p "$msixPath" /o
+          
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Sign MSIX
         shell: pwsh
@@ -97,29 +119,43 @@ jobs:
           CERTIFICATE_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         run: |
-          $msixPath = "src-tauri/target/release/bundle/msix/image-toolbox.msix"
+          # ---------------------------------------------------------
+          # 1. 动态查找 SignTool.exe (关键修复：避免路径不存在错误)
+          # ---------------------------------------------------------
+          $kitsRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+          $latestSdk = Get-ChildItem -Path $kitsRoot | Where-Object { $_.Name -match "^10\." } | Sort-Object Name -Descending | Select-Object -First 1
+          $signtool = "$($latestSdk.FullName)\x64\signtool.exe"
           
+          Write-Host "Using SignTool: $signtool"
+          if (-not (Test-Path $signtool)) { Write-Error "SignTool not found"; exit 1 }
+
+          $msixPath = "src-tauri/target/release/bundle/msix/image-toolbox.msix"
+
           if ($env:CERTIFICATE_BASE64) {
-            Write-Host "Signing with provided certificate..."
+            Write-Host "Signing with provided certificate secret..."
             $pfxPath = "cert.pfx"
             [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
             
-            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $pfxPath /p "$env:CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msixPath
+            # 使用动态找到的 signtool
+            & $signtool sign /f $pfxPath /p "$env:CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msixPath
             Remove-Item $pfxPath
           } else {
             Write-Host "No certificate secret found. Generating self-signed certificate for testing..."
-            # Create Self-Signed Cert
+            
+            # 注意：这里生成的自签名证书 Subject 是 "CN=u202f"
+            # 请确保你的 src-tauri/AppxManifest.xml 里的 Publisher 也是 "CN=u202f"
+            # 否则安装时会报错 "Publisher mismatch"
+            
             $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=u202f" -KeyUsage DigitalSignature -FriendlyName "ImageToolbox Test Cert" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
             
-            # Export PFX
             $pfxPath = "self-signed.pfx"
             $password = ConvertTo-SecureString -String "password" -Force -AsPlainText
             Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password
             
-            # Sign
-            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $pfxPath /p "password" /fd SHA256 $msixPath
+            # 使用动态找到的 signtool
+            & $signtool sign /f $pfxPath /p "password" /fd SHA256 $msixPath
             
-            Write-Warning "This MSIX is signed with a self-signed certificate. You must install the certificate to 'Trusted Root Certification Authorities' to install the app."
+            Write-Warning "Signed with Self-Signed Cert. Install cert to Trusted Root first."
           }
       # --- MSIX Packaging & Signing Steps End ---
 
@@ -133,31 +169,28 @@ jobs:
           $portableSrc = "src-tauri/target/release/image-toolbox.exe"
           $portableDst = "src-tauri/target/release/image-toolbox_portable.exe"
           if (Test-Path $portableSrc) {
-            Write-Host "Renaming $portableSrc to $portableDst"
             Move-Item $portableSrc $portableDst
           }
 
           # Rename MSI
           $msiDir = "src-tauri/target/release/bundle/msi"
-          $msiSrc = Get-ChildItem "$msiDir\*.msi" | Select-Object -First 1
-          if ($msiSrc) {
-             $msiDst = "$msiDir\image-toolbox_${version}_x64-setup.msi"
-             Write-Host "Renaming $($msiSrc.FullName) to $msiDst"
-             Move-Item $msiSrc.FullName $msiDst
+          if (Test-Path $msiDir) {
+             $msiSrc = Get-ChildItem "$msiDir\*.msi" | Select-Object -First 1
+             if ($msiSrc) {
+                $msiDst = "$msiDir\image-toolbox_${version}_x64-setup.msi"
+                Move-Item $msiSrc.FullName $msiDst
+             }
           }
 
-      # ✅ 优化 4: 简化 Tag 处理逻辑
       - name: Handle Tag (Create & Push if missing)
         shell: pwsh
         run: |
           $tag = "${{ github.event.inputs.tag }}"
           if (-not $tag) { Write-Error "Tag input is required"; exit 1 }
 
-          # 配置 Git 机器人身份
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 检查 Tag 是否存在
           git fetch --tags
           if (git tag -l $tag) {
             Write-Host "Tag $tag already exists."
@@ -167,24 +200,16 @@ jobs:
             git push origin $tag
           }
 
-      # ✅ 优化 5: 使用 softprops/action-gh-release 发布
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: ${{ github.event.inputs.tag }}
-          generate_release_notes: true # 自动根据提交记录生成说明，替代手动读取文件
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: false # 避免找不到文件时报错
+          generate_release_notes: true
           files: |
             LICENSE
             src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msix/*.msix
             src-tauri/target/release/image-toolbox_portable.exe
-            # 注意：dist/*.zip 只有在你手动压缩了 dist 文件夹后才会有，
-            # 默认 tauri build 不会生成 zip，如果不需要可以删除下面这行
-            # dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
