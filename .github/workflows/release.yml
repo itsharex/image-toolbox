@@ -98,7 +98,7 @@ jobs:
           } else {
             Write-Host "No certificate secret found. Generating self-signed certificate for testing..."
             # Create Self-Signed Cert
-            $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=ImageToolbox" -KeyUsage DigitalSignature -FriendlyName "ImageToolbox Test Cert" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+            $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=u202f" -KeyUsage DigitalSignature -FriendlyName "ImageToolbox Test Cert" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
             
             # Export PFX
             $pfxPath = "self-signed.pfx"

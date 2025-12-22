@@ -7,7 +7,7 @@
   <Identity
     Name="d3558c49-012b-42e7-947b-117833075215"
     Publisher="CN=u202f"
-    Version="0.1.0.0" />
+    Version="0.1.1" />
 
   <Properties>
     <DisplayName>Image Tool</DisplayName>
