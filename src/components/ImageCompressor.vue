@@ -322,7 +322,6 @@ const processTask = async (taskConfig: any, taskName: string, gitOptions?: { ena
 
     // Concurrency Limit
     const CONCURRENCY_LIMIT = 4;
-    const activePromises: Promise<void>[] = [];
 
     const processFile = async (file: any) => {
       try {
@@ -354,21 +353,6 @@ const processTask = async (taskConfig: any, taskName: string, gitOptions?: { ena
           progress.value.current++;
       }
     };
-
-    for (const file of filesToProcess) {
-       const p = processFile(file);
-       activePromises.push(p);
-       if (activePromises.length >= CONCURRENCY_LIMIT) {
-           await Promise.race(activePromises);
-           // Remove finished promises
-           // Note: Promise.race returns the value of the first resolved promise, 
-           // but we need to remove the specific promise object from the array.
-           // A simpler way is to wrap the promise to remove itself.
-           // However, for simplicity in this context without external libs:
-           // We simply await one slot to free up.
-           // Let's implement a better pool mechanism below.
-       }
-    }
     
     // Better implementation of pool inside the loop
     const results = [];
