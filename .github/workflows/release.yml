@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  workflows: write
+  # workflows: write  <-- 已删除此行
 
 jobs:
   build-and-release-windows:
@@ -19,12 +19,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4  # <-- 修正为 v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js (LTS)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4  # <-- 修正为 v4
         with:
           node-version: 'lts/*'
           cache: 'npm'
@@ -66,9 +66,11 @@ jobs:
           # Rename MSI
           $msiDir = "src-tauri/target/release/bundle/msi"
           if (Test-Path $msiDir) {
+             # 获取第一个 msi 文件
              $msiSrc = Get-ChildItem "$msiDir\*.msi" | Select-Object -First 1
              if ($msiSrc) {
-                $msiDst = "$msiDir\image-toolbox_${version}_x64-setup.msi"
+                # 显式构造新路径
+                $msiDst = Join-Path $msiDir "image-toolbox_${version}_x64-setup.msi"
                 Move-Item $msiSrc.FullName $msiDst
              }
           }
@@ -83,6 +85,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git fetch --tags
+          # 检查 tag 是否存在
           if (git tag -l $tag) {
             Write-Host "Tag $tag already exists."
           } else {
