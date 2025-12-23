@@ -311,12 +311,12 @@ const processTask = async (taskConfig: any, taskName: string, gitOptions?: { ena
 
     let filterString = '';
     if (taskConfig.resizeMethod === 'ratio') {
-        filterString = `scale=iw*${taskConfig.scaleFactor}:-1`;
+        filterString = `scale=iw*${taskConfig.scaleFactor}:-1:flags=lanczos`;
     } else {
         if (taskConfig.fixedMode === 'crop') {
-            filterString = `scale=${taskConfig.width}:${taskConfig.height}:force_original_aspect_ratio=increase,crop=${taskConfig.width}:${taskConfig.height}`;
+            filterString = `scale=${taskConfig.width}:${taskConfig.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${taskConfig.width}:${taskConfig.height}`;
         } else {
-            filterString = `scale=${taskConfig.width}:${taskConfig.height}:force_original_aspect_ratio=decrease,pad=${taskConfig.width}:${taskConfig.height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
+            filterString = `scale=${taskConfig.width}:${taskConfig.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${taskConfig.width}:${taskConfig.height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
         }
     }
 
@@ -331,7 +331,14 @@ const processTask = async (taskConfig: any, taskName: string, gitOptions?: { ena
           const outputFilename = `${nameWithoutExt}.${taskConfig.format}`;
           const outputPath = await join(taskConfig.outputFolder, outputFilename);
 
-          const args = ['-y', '-v', 'error', '-i', inputPath, '-vf', filterString, outputPath];
+          const qualityArgs: string[] = [];
+          if (['jpg', 'jpeg'].includes(taskConfig.format)) {
+              qualityArgs.push('-q:v', '1'); 
+          } else if (taskConfig.format === 'webp') {
+              qualityArgs.push('-q:v', '100');
+          }
+
+          const args = ['-y', '-v', 'error', '-i', inputPath, '-vf', filterString, ...qualityArgs, outputPath];
           
           const command = Command.create('ffmpeg', args);
           const output = await command.execute();

@@ -20,6 +20,11 @@
           "args": true
         },
         {
+          "name": "python",
+          "cmd": "python",
+          "args": true
+        },
+        {
           "name": "powershell",
           "cmd": "powershell.exe",
           "args": true

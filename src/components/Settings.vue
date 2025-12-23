@@ -7,13 +7,17 @@ import {
   Download, Terminal, 
   Info, Github, Package, 
   Cpu, Monitor, ShieldCheck,
-  RefreshCw, FileCode, X, Folder
+  RefreshCw, FileCode, X, Folder, FileJson
 } from 'lucide-vue-next';
 import { getVersion } from '@tauri-apps/api/app';
 
 // --- State ---
 const ffmpegStatus = ref<'unknown' | 'installed' | 'missing'>('unknown');
 const ffmpegVersion = ref('');
+const pythonStatus = ref<'unknown' | 'installed' | 'missing'>('unknown');
+const pythonVersion = ref('');
+const libsStatus = ref<{ cv2: boolean, numpy: boolean }>({ cv2: false, numpy: false });
+
 const appVersion = ref('0.1.0');
 
 onMounted(async () => {
@@ -27,6 +31,7 @@ onMounted(async () => {
 });
 
 const isChecking = ref(false);
+const isInstallingLibs = ref(false);
 const logs = ref<string[]>([]);
 
 // Install Modal State
@@ -93,6 +98,95 @@ const checkFFmpeg = async () => {
   } finally {
     isChecking.value = false;
   }
+};
+
+const checkPython = async () => {
+    isChecking.value = true;
+    addLog('正在检查 Python 环境...');
+    
+    try {
+        const cmd = Command.create('python', ['--version']);
+        const out = await cmd.execute();
+        
+        if (out.code === 0) {
+            pythonStatus.value = 'installed';
+            pythonVersion.value = out.stdout.trim();
+            addLog(`Python 已检测: ${pythonVersion.value}`);
+            await checkLibs();
+        } else {
+            pythonStatus.value = 'missing';
+            addLog(`Python 检查失败 (Code ${out.code})`);
+        }
+    } catch (e) {
+        pythonStatus.value = 'missing';
+        addLog(`Python 检查异常: ${e}`);
+    } finally {
+        isChecking.value = false;
+    }
+};
+
+const checkLibs = async () => {
+    addLog('检查 Python 依赖库 (opencv-python, numpy)...');
+    try {
+        const cmd = Command.create('python', ['-c', 'import cv2; import numpy; print("cv2_ok"); print("numpy_ok")']);
+        const out = await cmd.execute();
+        
+        libsStatus.value.cv2 = out.stdout.includes('cv2_ok');
+        libsStatus.value.numpy = out.stdout.includes('numpy_ok');
+        
+        if (libsStatus.value.cv2 && libsStatus.value.numpy) {
+            addLog('所有 Python 依赖库已安装。');
+        } else {
+            addLog(`依赖缺失: CV2=${libsStatus.value.cv2}, Numpy=${libsStatus.value.numpy}`);
+        }
+    } catch (e) {
+        addLog(`依赖检查失败: ${e}`);
+    }
+};
+
+const installLibs = async () => {
+    if (pythonStatus.value !== 'installed') {
+        addLog('请先安装 Python。');
+        return;
+    }
+    
+    isInstallingLibs.value = true;
+    addLog('正在通过 pip 安装依赖...');
+    
+    try {
+        // pip install opencv-python numpy
+        // Using 'python -m pip' is safer
+        const cmd = Command.create('python', ['-m', 'pip', 'install', 'opencv-python', 'numpy']);
+        
+        cmd.stdout.on('data', line => addLog(`[pip] ${line}`));
+        cmd.stderr.on('data', line => addLog(`[pip err] ${line}`));
+        
+        const child = await cmd.spawn();
+        addLog(`Pip 进程已启动 (PID: ${child.pid})`);
+        
+        // Wait logic isn't directly exposed by spawn in this version easily without promise wrapper if not using 'execute', 
+        // but 'execute' buffers output. Let's use execute for simplicity if we don't need real-time streaming strictly, 
+        // OR rely on 'close' event if we were handling it.
+        // Actually, command.execute() is easier for simple tasks but might timeout on slow network.
+        // Let's stick to spawn style structure or just await execute for simplicity in this context?
+        // Let's use execute to block and get result easily for now, assuming standard install isn't huge.
+        // Re-creating command for execute:
+        
+        const execCmd = Command.create('python', ['-m', 'pip', 'install', 'opencv-python', 'numpy']);
+        const out = await execCmd.execute();
+        
+        if (out.code === 0) {
+            addLog('依赖安装成功！');
+            await checkLibs();
+        } else {
+            addLog(`安装失败 (Code ${out.code}): ${out.stderr}`);
+        }
+        
+    } catch (e) {
+        addLog(`安装过程异常: ${e}`);
+    } finally {
+        isInstallingLibs.value = false;
+    }
 };
 
 const openInstallModal = async () => {
@@ -239,7 +333,10 @@ const openRepo = () => {
 };
 
 // Initial check
-checkFFmpeg();
+onMounted(() => {
+    checkFFmpeg();
+    checkPython();
+});
 </script>
 
 <template>
@@ -297,6 +394,66 @@ checkFFmpeg();
                 </div>
             </div>
 
+            <!-- Python Card -->
+            <div class="bg-zinc-900/40 border border-white/5 rounded-xl p-5 space-y-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 rounded-lg bg-zinc-800 text-zinc-300">
+                            <FileJson class="w-5 h-5" />
+                        </div>
+                        <div>
+                            <div class="font-bold text-zinc-200">Python 环境</div>
+                        </div>
+                    </div>
+                    <div v-if="pythonStatus === 'installed'" class="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-500 text-[10px] font-bold border border-emerald-500/20">
+                        DETECTED
+                    </div>
+                    <div v-else-if="pythonStatus === 'missing'" class="px-2 py-1 rounded-md bg-rose-500/10 text-rose-500 text-[10px] font-bold border border-rose-500/20">
+                        MISSING
+                    </div>
+                </div>
+                
+                <div class="h-px bg-white/5"></div>
+                
+                <!-- Python Info -->
+                <div v-if="pythonStatus === 'installed'" class="space-y-2">
+                    <div class="text-xs font-mono text-zinc-400 truncate">{{ pythonVersion }}</div>
+                    
+                    <!-- Libs Status -->
+                    <div class="flex gap-2">
+                        <div class="px-2 py-0.5 rounded text-[10px] font-bold border" 
+                             :class="libsStatus.cv2 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'">
+                            OpenCV
+                        </div>
+                        <div class="px-2 py-0.5 rounded text-[10px] font-bold border"
+                             :class="libsStatus.numpy ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'">
+                            NumPy
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="text-xs text-zinc-500">
+                    请安装 Python 3.x 并添加到系统 PATH。
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="checkPython" class="flex-1 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-200 transition-colors flex items-center justify-center gap-2">
+                        <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isChecking }" /> 检查
+                    </button>
+                    
+                    <button 
+                        v-if="pythonStatus === 'installed' && (!libsStatus.cv2 || !libsStatus.numpy)"
+                        @click="installLibs" 
+                        :disabled="isInstallingLibs"
+                        class="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        <Download class="w-3.5 h-3.5" /> {{ isInstallingLibs ? 'Installing...' : 'Pip Install' }}
+                    </button>
+                    <a v-else-if="pythonStatus !== 'installed'" href="https://www.python.org/downloads/" target="_blank" class="flex-1 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-400 transition-colors flex items-center justify-center gap-2">
+                        <Download class="w-3.5 h-3.5" /> 官网下载
+                    </a>
+                </div>
+            </div>
+
             <!-- Path Card -->
             <div class="bg-zinc-900/40 border border-white/5 rounded-xl p-5 space-y-4">
                 <div class="flex items-start justify-between">
@@ -341,6 +498,7 @@ checkFFmpeg();
                      <div>
                          <h1 class="text-xl font-bold text-white">Image Toolbox</h1>
                          <p class="text-sm text-zinc-400 mt-1">Version {{ appVersion }}</p>
+                         <p class="text-[10px] text-zinc-500 mt-2">© 2025 Endfield Industry Human Resources Team, Some Rights Reserved.</p>
                          <p class="text-[10px] text-zinc-500 mt-2">Licensed under the GNU General Public License v3.0 license</p>
                      </div>
                      
@@ -362,7 +520,7 @@ checkFFmpeg();
                          </button>
                          <button class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
                              <ShieldCheck class="w-4 h-4" />
-                             Check Updates
+                             <s>Check Updates</s>
                          </button>
                      </div>
                 </div>
@@ -404,7 +562,7 @@ checkFFmpeg();
                               <input type="radio" value="official" v-model="installConfig.source" class="hidden">
                               <div class="flex flex-col">
                                   <span class="text-xs font-bold">官方源 (Gyan.dev)</span>
-                                  <span class="text-[10px] opacity-70">国外节点，可能较慢</span>
+                                  <span class="text-[10px] opacity-70">下载速度可能较慢</span>
                               </div>
                           </label>
                           <label class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all" 
@@ -412,7 +570,7 @@ checkFFmpeg();
                               <input type="radio" value="mirror" v-model="installConfig.source" class="hidden">
                               <div class="flex flex-col">
                                   <span class="text-xs font-bold">Cloudflare 镜像</span>
-                                  <span class="text-[10px] opacity-70">国内推荐，速度快</span>
+                                  <span class="text-[10px] opacity-70">更新不及时，如官方源无法访问可以尝试</span>
                               </div>
                           </label>
                       </div>
