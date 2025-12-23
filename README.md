@@ -1,11 +1,9 @@
 # Image Toolbox (图片工具箱)
 [![Release](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml)
 [![Build](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.1.0-blue) ![Tauri](https://img.shields.io/badge/Tauri-v2-orange) ![Vue](https://img.shields.io/badge/Vue-3-green)
+![Version](https://img.shields.io/badge/version-0.1.1-blue) ![Tauri](https://img.shields.io/badge/Tauri-v2-orange) ![Vue](https://img.shields.io/badge/Vue-3-green)
 
 基于 **Tauri v2** 与 **Vue 3** 开发的桌面端图片批处理软件。
-
-该工具以内置 **FFmpeg** 管理与配置驱动（Profile）为核心，专为资源构建、静态站点素材处理及团队协作流程设计。
 
 > [!TIP]
 > 善用右上角的文档索引按钮以快速跳转章节。
@@ -26,37 +24,35 @@
 
 Image Toolbox 提供以下核心能力：
 
+### 1. 图片批量压缩 (Image Compressor)
 * **高性能处理**：基于 FFmpeg 实现高性能图片转码与缩放。
 * **多格式支持**：支持输出 PNG、JPG、WebP 等常见格式。
 * **灵活缩放**：支持固定尺寸或按比例倍数缩放。
-* **自动化流**：自动检测 Git 仓库，支持处理后自动 `git push`。
 * **配置驱动**：支持加载多个 Profile 配置，并提供执行前的预览模式（Review Mode）。
-* **环境向导**：内置 FFmpeg 下载向导及自动环境变量配置。
 
-### 缩放模式说明
+### 2. 智能裁剪 (Smart Crop)
+* **视觉算法**：基于 **OpenCV + SIFT** 特征匹配算法。
+* **自动定位**：根据模版图片自动在目标图片中定位并裁剪相同区域。
+* **双模输出**：支持同时输出高清原图裁剪和固定尺寸缩略图。
 
-* **Fixed（固定尺寸）**
-* 指定精确的宽度与高度。
-* 支持 **裁剪（Crop）** 或 **留白填充（Pad）** 以适配比例。
+### 3. 工作流集成
+* **Git 自动化**：自动检测输入/输出目录的 Git 仓库状态，支持处理后自动 Commit & Push。
+* **环境向导**：内置 FFmpeg 与 Python 环境（pip 依赖）检测与一键安装向导。
 
-* **Ratio（按比例）**
-* 按倍率进行缩放（例如 `0.5x`、`1.5x` 等）。
+## 📖 快速上手
 
-## 📖 快速上手（GUI）
+### 图片压缩
+1. **启动应用**：选择“图片压缩”标签页。
+2. **配置参数**：设置输入输出目录、目标格式和尺寸。
+3. **执行任务**：点击开始按钮。
 
-以下是完成一次图片批处理的标准流程：
-
-1. **准备目录结构**：
-```text
-assets/
-├── input/   # 存放原图
-└── output/  # 处理后的输出目录
-
-```
-
-
-2. **启动应用**：在 GUI 界面填写路径及处理参数。
-3. **执行任务**：确认配置后点击执行。
+### 智能裁剪
+1. **准备模版**：准备包含目标特征的小图作为模版。
+2. **配置路径**：
+   - **Templates Folder**：存放模版图片的文件夹。
+   - **Source Input**：需要被裁剪的原始大图文件夹。
+3. **选择模式**：勾选“高清裁剪”或“固定尺寸”。
+4. **执行**：点击 "Start Cropping"。
 
 ## 🛠️ 配置文件说明 (`settings.json`)
 
@@ -78,29 +74,20 @@ Image Toolbox 支持通过 JSON 定义复杂的处理任务。每个键值对代
     "fixed_mode": "crop"
   }
 }
-
 ```
 
-### 字段详细说明
+## 📦 环境依赖
 
-| 字段 | 说明 | 备注 |
-| --- | --- | --- |
-| `enable` | 是否启用该配置 | `true` / `false` |
-| `description` | 配置描述 | 仅用于备注识别 |
-| `input_folder` | 输入目录 | 支持相对或绝对路径 |
-| `output_folder` | 输出目录 | 处理后的存放位置 |
-| `format` | 输出格式 | `png` / `jpg` / `webp` |
-| `resize_method` | 缩放方式 | `fixed` (固定) / `ratio` (比例) |
-| `width` / `height` | 目标尺寸 | 仅在 `fixed` 模式下生效 |
-| `fixed_mode` | 适配方式 | `crop` (裁剪) / `pad` (填充) |
+应用运行依赖以下外部环境：
 
-## 📽️ FFmpeg 环境
+### 1. FFmpeg
+* **用途**：图片压缩、格式转换、缩放。
+* **安装**：应用内“设置”页面提供一键安装向导。
 
-应用核心依赖 **FFmpeg**：
-
-* **自动检测**：启动时检测系统 PATH。
-* **一键安装**：若缺失，应用提供安装向导。
-* **源支持**：支持从官方源或国内镜像源下载。
+### 2. Python
+* **用途**：智能裁剪。
+* **要求**：Python 3.x，并安装 `opencv-python` 和 `numpy` 库。
+* **配置**：应用内“设置”页面提供依赖检查与 `pip` 一键安装功能。
 
 ## 💻 开发者指南
 
@@ -109,39 +96,31 @@ Image Toolbox 支持通过 JSON 定义复杂的处理任务。每个键值对代
 1. **安装依赖**：
 ```bash
 npm install
-
 ```
 
 2. **启动开发模式**：
 ```bash
 npm run tauri dev
-
 ```
 
 3. **构建发布版本**：
 ```bash
 npm run tauri build
-
 ```
 
 ## ❓ 常见问题
 
-1. **图片处理失败？**
-* 请确认 FFmpeg 已正确安装且在 PATH 中可用。
-* 检查输入文件格式是否受支持。
+1. **智能裁剪无法运行？**
+* 请确保已安装 Python，并且在“设置”页中检查 `opencv-python` 和 `numpy` 是否已安装。
 
 2. **Git 自动提交失败？**
 * 确保输入/输出目录位于有效的 Git 仓库内。
 * 检查本地是否已配置 Git 用户信息 (`user.name`, `user.email`)。
 
-3. **路径找不到？**
-* 建议先使用绝对路径进行测试。
-* 相对路径默认相对于 `settings.json` 所在位置。
-
 ## 📜 许可证
 
 本项目采用 **GNU General Public License v3.0** 许可协议。
 
-详细信息请参阅 [LICENSE](https://www.google.com/search?q=./LICENSE) 文件。
+详细信息请参阅 [LICENSE](./LICENSE.txt) 文件。
 
 © **Endfield Industry Human Resources Team**, Some Rights Reserved.
