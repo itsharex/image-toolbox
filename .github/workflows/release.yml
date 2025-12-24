@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  # actions: write # 上传 artifact 到 summary 不需要此权限
 
 jobs:
   build-and-release-windows:
@@ -19,12 +19,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # <-- 修正为 v4
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js (LTS)
-        uses: actions/setup-node@v4  # <-- 修正为 v4
+        uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           cache: 'npm'
@@ -56,24 +56,48 @@ jobs:
           $tag = "${{ github.event.inputs.tag }}"
           $version = $tag -replace "^v", ""
           
-          # Rename Portable EXE
+          # 1. 处理 Portable EXE
           $portableSrc = "src-tauri/target/release/image-toolbox.exe"
           $portableDst = "src-tauri/target/release/image-toolbox_portable.exe"
           if (Test-Path $portableSrc) {
             Move-Item $portableSrc $portableDst
+            Write-Host "Portable renamed."
           }
 
-          # Rename MSI
+          # 2. 处理 MSI
           $msiDir = "src-tauri/target/release/bundle/msi"
           if (Test-Path $msiDir) {
-             # 获取第一个 msi 文件
              $msiSrc = Get-ChildItem "$msiDir\*.msi" | Select-Object -First 1
              if ($msiSrc) {
-                # 显式构造新路径
                 $msiDst = Join-Path $msiDir "image-toolbox_${version}_x64-setup.msi"
                 Move-Item $msiSrc.FullName $msiDst
+                Write-Host "MSI renamed."
              }
           }
+
+          # 3. 处理 NSIS (修复 Release 中缺少 exe 安装包的问题)
+          $nsisDir = "src-tauri/target/release/bundle/nsis"
+          if (Test-Path $nsisDir) {
+             $nsisSrc = Get-ChildItem "$nsisDir\*.exe" | Select-Object -First 1
+             if ($nsisSrc) {
+                $nsisDst = Join-Path $nsisDir "image-toolbox_${version}_x64-nsis-setup.exe"
+                Move-Item $nsisSrc.FullName $nsisDst
+                Write-Host "NSIS renamed to $nsisDst"
+             }
+          }
+
+      # 此步骤会将产物打包成 zip 上传到 GitHub Actions 运行详情页 (Summary)
+      # 方便构建失败时排查，或者不发 Release 时取用。
+      # 注意：这个 zip 不会自动跑到 Release Assets 里。
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            src-tauri/target/release/image-toolbox_portable.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 5
 
       - name: Handle Tag (Create & Push if missing)
         shell: pwsh
@@ -85,7 +109,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git fetch --tags
-          # 检查 tag 是否存在
           if (git tag -l $tag) {
             Write-Host "Tag $tag already exists."
           } else {
@@ -101,8 +124,8 @@ jobs:
           name: ${{ github.event.inputs.tag }}
           generate_release_notes: true
           files: |
-            LICENSE
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/image-toolbox_portable.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
