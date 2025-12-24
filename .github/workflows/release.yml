@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: write
-  # actions: write # 上传 artifact 到 summary 不需要此权限
 
 jobs:
   build-and-release-windows:
@@ -21,7 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 必须为0，否则无法获取完整的Tag历史来计算Changelog
 
       - name: Setup Node.js (LTS)
         uses: actions/setup-node@v4
@@ -61,7 +60,6 @@ jobs:
           $portableDst = "src-tauri/target/release/image-toolbox_portable.exe"
           if (Test-Path $portableSrc) {
             Move-Item $portableSrc $portableDst
-            Write-Host "Portable renamed."
           }
 
           # 2. 处理 MSI
@@ -71,24 +69,20 @@ jobs:
              if ($msiSrc) {
                 $msiDst = Join-Path $msiDir "image-toolbox_${version}_x64-setup.msi"
                 Move-Item $msiSrc.FullName $msiDst
-                Write-Host "MSI renamed."
              }
           }
 
-          # 3. 处理 NSIS (修复 Release 中缺少 exe 安装包的问题)
+          # 3. 处理 NSIS (Exe安装包)
           $nsisDir = "src-tauri/target/release/bundle/nsis"
           if (Test-Path $nsisDir) {
              $nsisSrc = Get-ChildItem "$nsisDir\*.exe" | Select-Object -First 1
              if ($nsisSrc) {
                 $nsisDst = Join-Path $nsisDir "image-toolbox_${version}_x64-nsis-setup.exe"
                 Move-Item $nsisSrc.FullName $nsisDst
-                Write-Host "NSIS renamed to $nsisDst"
              }
           }
 
-      # 此步骤会将产物打包成 zip 上传到 GitHub Actions 运行详情页 (Summary)
-      # 方便构建失败时排查，或者不发 Release 时取用。
-      # 注意：这个 zip 不会自动跑到 Release Assets 里。
+      # 上传 Artifacts 到 Actions Summary (含 zip，但不影响 Release)
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -117,12 +111,66 @@ jobs:
             git push origin $tag
           }
 
+      # [新增步骤] 准备 Release Note 内容
+      - name: Generate Release Note Content
+        shell: pwsh
+        run: |
+          $currentTag = "${{ github.event.inputs.tag }}"
+          $notePath = ".github/release_note.md"
+          $outFile = "release_body.md"
+          
+          # 1. 读取基础内容
+          if (Test-Path $notePath) {
+            $content = Get-Content $notePath -Raw -Encoding UTF8
+          } else {
+            $content = "Release $currentTag"
+          }
+
+          # 2. 计算上一个 Tag
+          # 重新拉取以确保包含刚才创建的 tag
+          git fetch --tags --force 
+          # 获取按创建时间倒序排列的 Tag 列表
+          $tags = git tag --sort=-creatordate
+          if ($tags -is [string]) { $tags = @($tags) } # 确保是数组
+
+          $prevTag = $null
+          
+          # 逻辑：因为上一步 Handle Tag 保证了当前 tag 存在并已 push
+          # 所以列表中第 0 个应该是当前 tag，第 1 个是上一个 tag
+          if ($tags.Count -gt 1) {
+             # 简单校验第一个是否为当前tag，如果是，取第二个
+             if ($tags[0] -eq $currentTag) {
+                $prevTag = $tags[1]
+             } else {
+                # 如果排序有出入，尝试遍历寻找
+                $idx = $tags.IndexOf($currentTag)
+                if ($idx -ge 0 -and ($idx + 1) -lt $tags.Count) {
+                    $prevTag = $tags[$idx+1]
+                }
+             }
+          }
+
+          # 3. 拼接 Changelog 链接
+          if ($prevTag) {
+            $repoUrl = "https://github.com/${{ github.repository }}"
+            $compareLink = "$repoUrl/compare/$prevTag...$currentTag"
+            $content += "`n`n**Full Changelog**: $compareLink"
+            Write-Host "Generated comparison link: $compareLink"
+          } else {
+            Write-Warning "Could not find previous tag to generate changelog link."
+          }
+
+          # 4. 写入临时文件供 Release 步骤使用
+          Set-Content -Path $outFile -Value $content -Encoding UTF8
+
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: ${{ github.event.inputs.tag }}
-          generate_release_notes: true
+          # 修改：使用 body_path 读取上一步生成的文件
+          body_path: release_body.md
+          # 确保这里不包含 generate_release_notes: true，否则会覆盖或冲突
           files: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
