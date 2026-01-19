@@ -264,7 +264,6 @@ const startProcess = async () => {
             addLog(`正在处理: ${file.name}`, 'info');
             
             // Determine Output Path
-            let targetDir = '';
             let targetFilename = '';
             
             // Remove extension from relative path for the new filename
@@ -290,7 +289,6 @@ const startProcess = async () => {
                     await mkdir(targetDirPart, { recursive: true });
                 }
                 
-                targetDir = targetDirPart; // Just for logging/debug if needed
                 // Re-assign for FFmpeg
                 // ffmpeg needs the full path
                 file.relativePath = fullTargetPath; // Storing the result path temporarily here or just use a local var
