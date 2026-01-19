@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { Image, Settings as SettingsIcon, Layers, Box, ScanFace } from 'lucide-vue-next';
+import { Image, Settings as SettingsIcon, Layers, Box, ScanFace, Film } from 'lucide-vue-next';
 import ImageCompressor from './components/ImageCompressor.vue';
 import SmartCropper from './components/SmartCropper.vue';
+import VideoToApng from './components/VideoToApng.vue';
 import Settings from './components/Settings.vue';
 
 const activeTab = ref('compressor');
@@ -13,6 +14,7 @@ const navGroups = [
     items: [
       { id: 'compressor', label: '图片压缩', icon: Image },
       { id: 'smart-crop', label: '智能裁剪', icon: ScanFace },
+      { id: 'video-apng', label: '视频转 APNG', icon: Film },
       { id: 'batch', label: '批量重命名', icon: Layers, disabled: true },
     ]
   },
@@ -55,7 +57,7 @@ const currentItem = computed(() => {
           </div>
           <div class="flex flex-col">
             <h1 class="font-bold text-lg tracking-tight text-white leading-none">Image Toolbox</h1>
-            <span class="text-[10px] text-zinc-500 font-medium tracking-widest uppercase mt-1">v0.1.0</span>
+            <span class="text-[10px] text-zinc-500 font-medium tracking-widest uppercase mt-1">v0.3.0</span>
           </div>
         </div>
       </div>
@@ -136,6 +138,7 @@ const currentItem = computed(() => {
           <div :key="activeTab" class="h-full">
             <ImageCompressor v-if="activeTab === 'compressor'" />
             <SmartCropper v-else-if="activeTab === 'smart-crop'" />
+            <VideoToApng v-else-if="activeTab === 'video-apng'" />
             <Settings v-else-if="activeTab === 'settings'" />
             <div v-else class="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4">
                  <div class="w-16 h-16 rounded-2xl border border-dashed border-zinc-700 flex items-center justify-center bg-zinc-900/50">
